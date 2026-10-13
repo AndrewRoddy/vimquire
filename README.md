@@ -1,340 +1,276 @@
 # vimquire
 
-Web search from inside Vim. Type `:Search <query>` and the results open in the
-buffer you're in. Pick a result to read the page as plain text without leaving
-the editor.
-
-> **Status:** early design. Nothing below is implemented yet. This README
-> describes the plan.
-
-```
-:Search how to reverse a list in python
-```
+Search the web and programming docs without leaving Neovim. Type
+`:Search <query>` and results from Stack Overflow, Wikipedia, DevDocs and
+(optionally) your own SearXNG instance show up merged into one list in the
+buffer you're in. Press `<CR>` on a result to read it as plain text, follow
+its links, and press `q` to go back.
 
 ```
- vimquire » how to reverse a list in python                      [brave]
- ──────────────────────────────────────────────────────────────────────
-  1. How do I reverse a list in Python? - Stack Overflow
-     stackoverflow.com/questions/3940128
-     Use list.reverse() to reverse in place, or reversed() / slicing [::-1]...
-
-  2. Python List reverse() Method - W3Schools
-     www.w3schools.com/python/ref_list_reverse.asp
-     The reverse() method reverses the sorting order of the elements...
- ──────────────────────────────────────────────────────────────────────
- <CR> open   o open in browser   y yank URL   n/p next/prev page   q back
+:Search vec push
 ```
 
-## Why `:Search` and not `:search`
+```
+ vimquire » vec push
+ 24 results from stackoverflow, wikipedia, devdocs
+ ─────────────────────────────────────────────────────────────────────────
 
-Vim only lets plugins define user commands that start with a **capital letter**,
-so `:search` isn't possible. If you want to type it in lowercase anyway, add an
-abbreviation that only fires at the start of the command line:
+  1. std::vec::Vec::push  [rust]
+     devdocs.io/rust/std/vec/struct.vec#method.push
+     std::vec
 
-```vim
-cnoreabbrev <expr> search getcmdtype() ==# ':' && getcmdline() ==# 'search' ? 'Search' : 'search'
+  2. How do you push values to a vec inside an enum stuct in Rust?  [stackoverflow]
+     stackoverflow.com/questions/75701102/how-do-you-push-values-to-a-vec-...
+     6 votes, 2 answers, answered · rust
+ ─────────────────────────────────────────────────────────────────────────
+ <CR> open   o browser   y yank URL   n/p next/prev page   s sources   q back
 ```
 
-## How it works
+## Status
 
-```
-:Search foo ──► backend (HTTP JSON API) ──► results buffer ──► <CR> ──► page as text
-```
+vimquire is an early **Neovim plugin** (0.10 or newer, written in Lua). Here's
+what works today and what's planned.
 
-1. **Query.** `:Search` hands the query to a small helper script, run async
-   through `job_start()` in Vim or `jobstart()` in Neovim, so the editor never
-   freezes.
-2. **Backend.** The helper calls a search backend that returns JSON. No
-   scraping and no browser by default (see [Backends](#backends)).
-3. **Results buffer.** Results go into the current window as a scratch buffer
-   (`buftype=nofile`, `bufhidden=wipe`, `filetype=vimquire`). `q` or `<C-o>`
-   takes you back to the file you came from.
-4. **Reading a page.** `<CR>` on a result fetches the page, strips it down to
-   readable text with a readability extractor, and shows it in the same window.
-   Links are numbered like footnotes, and `<CR>` on a link number follows it.
+### Working now
 
-## Backends
+- **`:Search`** asks every source you've turned on at once and merges the
+  results into one ranked list, tagged by where each came from. Results show
+  up as each source answers, so a slow site doesn't hold up the rest.
+- **Sources:**
+  - **Stack Overflow** through the official Stack Exchange API. Opening a
+    result shows the question and its answers, best-voted first.
+  - **Wikipedia** through the MediaWiki API. Opening a result shows the
+    article as text.
+  - **DevDocs**: any of its 843 doc sets (Rust, Python, Svelte, JavaScript,
+    React, Go...). Each one's search index is downloaded once and searched
+    **on your machine**, so those queries never leave it.
+  - **SearXNG** for general web results, if you run an instance and set
+    `searxng_url`.
+- **`@source` filter**: `:Search @rust push` or `:Search @so borrow checker`
+  searches one source only.
+- **Page reader**: pages render as text in the same window, with headings, code
+  blocks and lists. Links are numbered `[n]`. `<CR>` follows a link, `<Tab>`
+  jumps between links, and DevDocs links to `#sections` jump within the page.
+  Every page ends with a numbered list of its links.
+- **`:SearchSources`**: a list of every source you can search, with
+  collapsible sections (see below).
+- **Private by default**: no cookies, no history, searches removed from
+  command history (see [Private mode](#private-mode)).
+- **Lowercase `:search`** works too. It's expanded to `:Search`.
 
-You choose one in config. They're listed from most to least recommended.
+### Planned
 
-| Backend | Cost | Account? | Terms-of-service safe? | Notes |
-|---|---|---|---|---|
-| **SearXNG (self-hosted)** | Free | No | Yes, it's your own instance | Meta-search across many engines, has a JSON API. Runs in Docker. **The default.** |
-| **Brave Search API** | Free tier, then paid | API key | Yes | Real index, clean JSON, needs a key. |
-| **Kagi API** | Paid | API key | Yes | Excellent results, costs money. |
-| **Marginalia Search API** | Free | No (shared `public` key) | Yes | Independent index focused on the small, non-commercial web. Not Google-like results, and the shared key is rate-limited. |
-| **YaCy (self-hosted)** | Free | No | Yes | Peer-to-peer search engine with its own crawler and index. Runs on your machine. Weaker results, but nobody else's index involved. |
-| **Site APIs** (Wikipedia, Stack Exchange, GitHub, MDN…) | Free | No | Yes | Searches specific sites through their official APIs. See [Searching without a search engine](#searching-without-a-search-engine). |
-| **DuckDuckGo Instant Answer API** | Free | No | Yes | Only gives instant answers and abstracts, not full web results. |
-| **Headless Chrome scraping** | Free | No | **No** | Opt-in only. See [Risks](#risks). |
+- **Python docs straight from docs.python.org.** Any site built with Sphinx
+  publishes a `searchindex.js` that could be downloaded and searched locally
+  the same way DevDocs is.
+- **`llms.txt` sources.** Projects like Svelte publish their whole docs as
+  plain text for tools to read. vimquire would add those as sources.
+- **`pydoc`**: Python's built-in docs, fully offline with no network at all.
+- **GitHub** repository and code search.
+- **Brave Search and Kagi** as paid or keyed alternatives to SearXNG.
+- **Headless Chrome "render" mode**, opt-in only, for pages that show nothing
+  without JavaScript. It would run with a throwaway profile and its sandbox
+  on (see [Risks](#risks)).
+- **Opt-in search history**, kept local.
+- **A `:help vimquire` page.**
 
-### Searching without a search engine
+## Install
 
-You can't search "the web" without an **index**, a giant database built by
-crawling billions of pages. Google, Bing, Brave, Mojeek, Marginalia and YaCy
-each build their own. Most other engines (DuckDuckGo, Startpage, Ecosia) rent
-results from Bing or Google.
-
-If you don't want any of the big engines involved, there are two ways to go:
-
-1. **An independent index.** Marginalia, Mojeek, or a self-hosted YaCy.
-2. **The `sites` backend.** Instead of one search engine, fire the query at a
-   handful of official site APIs at once and merge the results:
-
-   ```vim
-   let g:vimquire_backend = 'sites'
-   let g:vimquire_sites   = ['devdocs', 'stackoverflow', 'wikipedia', 'github']
-   let g:vimquire_devdocs = ['python~3.12', 'javascript', 'rust']   " docs to download
-   ```
-
-   - **Stack Overflow** goes through the official Stack Exchange API
-     (`api.stackexchange.com/2.3/search/advanced?site=stackoverflow`).
-     Opening a result shows the question and its answers, sorted by votes.
-     There's no account, but there is a daily limit: 300 requests per IP
-     without a key, or 10,000 with a free app key from stackapps.com.
-   - **DevDocs** has no search API, so vimquire works the way the DevDocs
-     website does: it downloads each doc set's small search index once
-     (`documents.devdocs.io/<slug>/index.json`) and searches it **locally**,
-     so the query never leaves your machine. Pages are fetched one at a time
-     when you open them. Set `g:vimquire_offline = 1` to also download every
-     page up front (`db.json`) so it works with no internet. It only re-downloads when a doc's version changes,
-     as listed in `devdocs.io/docs.json`.
-   - **Official docs sites directly**, for anything DevDocs doesn't cover or
-     doesn't keep up to date:
-     - **Python** (and any site built with Sphinx) publishes its search index
-       at `/searchindex.js`, e.g. `docs.python.org/3/searchindex.js`.
-       Download it once and search locally. For library APIs,
-       `python -m pydoc <name>` works fully offline with no network at all.
-     - **Svelte** publishes plain-text versions of its whole docs for tools to
-       read: `svelte.dev/llms.txt`, which links the full and abridged text
-       files. Split them by heading and search locally.
-     - Many other projects also publish an `llms.txt`, which is worth
-       checking before writing a custom source.
-
-   For programming questions this often beats a general engine. Every source is
-   an official API, so there's nothing to break the rules of and no account to
-   lose. The tradeoff is that you only find what's on those sites.
-
-### Managing sources
-
-`:SearchSources` opens a searchable list of every available source: all 843
-DevDocs doc sets, plus Stack Overflow, Wikipedia, GitHub and the rest. Search
-it with `/` like any buffer.
-
-```
- vimquire sources                                    enabled: 4 · 7.3 MB on disk
- ──────────────────────────────────────────────────────────────────────────────
- [x] Rust                    devdocs   rust          4.3 MB index  (70 MB offline)
- [x] Python 3.13             devdocs   python~3.13   1.4 MB index  (19 MB offline)
- [x] Svelte                  devdocs   svelte        6 KB index    (1 MB offline)
- [x] Stack Overflow          api       -             live, nothing stored
- [ ] JavaScript              devdocs   javascript    -             (12 MB offline)
- [ ] React                   devdocs   react         -             (9 MB offline)
- ──────────────────────────────────────────────────────────────────────────────
- <Space> enable/disable   O toggle offline copy   u update   / filter   q close
-```
-
-The same thing works from the command line, with tab completion:
-
-```vim
-:SearchAdd rust python~3.13
-:SearchRemove rust          " also deletes its downloaded files
-```
-
-Turning a source off deletes its downloaded files.
-
-**Mixed results.** `:Search` asks every enabled source at once and merges the
-results into one ranked list, like a normal search engine. Each result is
-tagged with where it came from:
-
-```
-  1. Vec::push                                                     [rust]
-     doc.rust-lang.org/std/vec/struct.Vec.html#method.push
-  2. How do I append to a Vec in Rust?                    [stackoverflow]
-     stackoverflow.com/questions/...   214 votes, answered
-```
-
-To search one source only, start the query with `@` and the source name:
-`:Search @rust push`, `:Search @python~3.13 pathlib`.
-
-Writing your own crawler is possible, but it's a big project of its own (see
-[Risks](#risks) for what it involves).
-
-## Private mode (incognito)
-
-Private mode is **on by default.** It leaves nothing behind and doesn't
-identify you:
-
-- **No cookies.** Every request starts fresh. Nothing is saved between
-  searches, so the backend can't link one search to the next by cookie.
-- **No history.** Queries and visited pages aren't written to disk. Result
-  buffers are `nofile` and get wiped when you leave them.
-- **Nothing in Vim's own files.** Search commands are left out of Vim's
-  command history and `viminfo`/`shada`, so they don't show up in `q:` or
-  after a restart.
-- **No referrer.** Sites you open don't learn that you came from a search.
-- **Generic user agent.** Requests send a common browser user agent, not one
-  that identifies vimquire.
-- **Throwaway browser profile.** If you turn on the headless Chrome mode, it
-  runs with `--incognito` and a fresh temporary `--user-data-dir` that's
-  deleted when it exits. It never touches your real Chrome profile or your
-  Google login.
-
-What private mode **can't** hide (the same is true of a real incognito
-window):
-
-- **Your IP address.** The search backend and every site you open still see
-  it. Use a VPN or Tor (`g:vimquire_proxy = 'socks5h://127.0.0.1:9050'`) if
-  that matters to you. A self-hosted SearXNG sits in between, so the upstream
-  engines only see your instance.
-- **Your API key.** With Brave or Kagi, the key links all your searches to
-  your account with them.
-- **Your network.** Your ISP, school or employer can still see which sites
-  you connect to.
-
-```vim
-let g:vimquire_private = 1                         " default
-let g:vimquire_proxy   = ''                        " e.g. socks5h://127.0.0.1:9050 for Tor
-```
-
-### Why not headless Chrome by default?
-
-It works, but it's the fragile and risky option:
-
-- Google's and DuckDuckGo's terms forbid automated querying.
-- You'll hit CAPTCHAs and IP rate limits.
-- The page markup changes often, which breaks the scraper.
-- It means shipping or requiring a ~150 MB browser.
-
-A self-hosted SearXNG instance gives you Google-ish results through a JSON API
-in about 20 ms, with nothing to scrape on your side.
-
-## Install (planned)
-
-```vim
-" vim-plug
-Plug 'AndrewRoddy/vimquire'
-```
+With [lazy.nvim](https://github.com/folke/lazy.nvim):
 
 ```lua
--- lazy.nvim
-{ "AndrewRoddy/vimquire", cmd = "Search" }
+{
+  "AndrewRoddy/vimquire",
+  cmd = { "Search", "SearchOpen", "SearchSources", "SearchAdd", "SearchRemove" },
+  init = function()
+    -- Let a lowercase :search work before the plugin has loaded.
+    vim.cmd([[cnoreabbrev <expr> search getcmdtype() ==# ':' && getcmdline() ==# 'search' ? 'Search' : 'search']])
+  end,
+  opts = {},
+}
+```
+
+To work on a local checkout, point `dir` at it. This uses the checkout when
+the folder exists and clones from GitHub on any machine that doesn't have it:
+
+```lua
+dir = vim.uv.fs_stat("C:/Coding/vimquire") and "C:/Coding/vimquire" or nil,
+```
+
+vimquire uses `curl` for every request. It ships with Windows 10 and newer,
+macOS and most Linux distributions.
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `:Search {query}` | Search every enabled source. `@name` at the start searches one. |
+| `:SearchOpen {url}` | Read any web page as text |
+| `:SearchSources` | Turn sources on and off |
+| `:SearchAdd {id...}` | Turn sources on, e.g. `:SearchAdd rust python~3.13` (tab-completes) |
+| `:SearchRemove {id...}` | Turn sources off and delete their downloads |
+
+**In the results:** `<CR>` open, `o` open in your browser, `y` copy the URL,
+`n`/`p` next/previous page, `s` sources, `q` back.
+
+**On a page:** `<CR>` follow the `[n]` link under the cursor, `<Tab>`/`<S-Tab>`
+next/previous link, `o` open in your browser, `y` copy the URL, `q` back.
+
+## Managing sources
+
+`:SearchSources` lists everything you can search. **Websites** and **DevDocs**
+are collapsible sections, and DevDocs docs that come in several versions
+(Python, Node, Qt...) collapse into their own section inside it.
+
+```
+ vimquire sources   4 on · 5.7 MB on disk
+ <Space> on/off   <CR> open/close   O offline copy   u update docs   f filter   F clear   q close
+ ─────────────────────────────────────────────────────────────────────────
+ ▾ Websites
+     [x] Stack Overflow            stackoverflow   live, nothing stored
+     [x] Wikipedia                 wikipedia       live, nothing stored
+     [ ] SearXNG (web)             searxng         set searxng_url in setup() to use
+
+ ▾ DevDocs                     843 docs, 2 on: python~3.13, rust
+     [ ] Angular                   angular         offline copy 5.1 MB
+   ▾ [~] Python                                    12 versions, 1 on
+         [ ] Python 3.14           python~3.14     offline copy 20.8 MB
+         [x] Python 3.13           python~3.13     1.4 MB on disk
+     [x] Rust                      rust            4.3 MB on disk
+```
+
+- **`<Space>`** turns a source on or off. On a section header it opens or
+  closes the section instead.
+- **Turning a DevDocs doc on** downloads its search index (Rust is 4.3 MB,
+  Python 1.4 MB, Svelte 6 KB). **Turning it off** stops any download in
+  progress, deletes its files and removes it from search. Turning it back on
+  downloads it again.
+- **`O`** also downloads every page of a doc so it works with no internet
+  (Rust 70 MB, Python 19 MB, Svelte 1 MB). Press `O` again to delete it.
+- **`u`** re-downloads any doc that DevDocs has a newer version of.
+- **`f`** filters the list (`f` then `python` shows only Python docs); `F`
+  clears it. `h`/`l` close and open sections.
+- Websites store nothing, so turning one off only removes it from search.
+
+Everything vimquire downloads lives in `stdpath("data")/vimquire`
+(`~/AppData/Local/nvim-data/vimquire` on Windows). With a handful of docs
+turned on it's usually 10 to 20 MB. Downloading every DevDocs doc for offline
+use would be about 8.8 GB, the absolute worst case.
+
+## Configuration
+
+These are the defaults:
+
+```lua
+require("vimquire").setup({
+  data_dir = vim.fn.stdpath("data") .. "/vimquire",
+  curl = "curl",
+  timeout = 30,                 -- seconds per request
+  results = 20,                 -- results per page of :Search
+  per_source = 8,               -- most results any one source contributes
+  width = 100,                  -- wrap width for pages (capped to the window)
+  private = true,               -- remove searches from command history
+  proxy = nil,                  -- e.g. "socks5h://127.0.0.1:9050" for Tor
+  lowercase_alias = true,       -- expand :search into :Search
+  stackexchange_key = nil,      -- raises Stack Exchange's limit from 300 to 10,000 a day
+  wikipedia_lang = "en",
+  searxng_url = nil,            -- e.g. "http://localhost:8888"
+  default_enabled = { "stackoverflow", "wikipedia" }, -- turned on the first time only
+})
 ```
 
 Running SearXNG locally:
 
 ```sh
 docker run -d -p 8888:8080 --name searxng searxng/searxng
-# then turn on the json format in settings.yml:  search.formats: [html, json]
+# then turn on JSON output in its settings.yml:  search.formats: [html, json]
 ```
 
-## Configuration (planned)
+## Private mode
 
-```vim
-let g:vimquire_backend   = 'searxng'               " searxng | brave | kagi | ddg | chrome
-let g:vimquire_url       = 'http://localhost:8888' " SearXNG instance
-let g:vimquire_api_key   = $BRAVE_API_KEY          " read from the env, never hard-code it
-let g:vimquire_results   = 10
-let g:vimquire_safesearch = 1
+Private mode is on by default:
+
+- **No cookies.** Every request starts fresh, so the sites can't link one
+  search to the next by cookie.
+- **No history.** Searches and pages are never written to disk. Search
+  commands are removed from Neovim's command history, so they don't show up in
+  `q:` or survive a restart. Buffers are named by a counter, never by the
+  query, and are wiped when you leave them.
+- **DevDocs searches stay local.** Only the page you open is fetched.
+- **No referrer.** Sites you open don't learn you came from a search.
+- **Web pages get a common browser user agent.** APIs (Stack Exchange,
+  Wikipedia, DevDocs) get `vimquire/0.1` instead, because Wikipedia requires
+  tools to identify themselves. That names the tool, not you.
+
+What private mode **can't** hide, same as a browser's incognito window:
+
+- **Your IP address.** Every site you search or open sees it. Set `proxy` to
+  route through Tor or a VPN if that matters.
+- **Your network.** Your ISP, school or employer can see which sites you
+  connect to.
+- **An API key.** If you set `stackexchange_key`, that key ties your requests
+  together.
+
+## Development
+
+```sh
+nvim --headless -u NONE -l tests/smoke.lua
 ```
 
-## Commands and mappings
-
-| Command | What it does |
-|---|---|
-| `:Search {query}` | Search and show results in the current window |
-| `:SearchOpen {url}` | Fetch a URL and show it as text |
-| `:SearchBrowser` | Open the result under the cursor in your system browser |
-
-Mappings in the results buffer: `<CR>` open, `o` system browser, `y` yank URL,
-`n`/`p` next/previous page, `q` go back.
+The smoke test talks to the real DevDocs, Stack Overflow and Wikipedia, so it
+needs internet. It uses a temporary data folder and cleans up after itself.
 
 ## Risks
 
-Here's what you're actually exposed to with this project, and how it compares
-to the Discord ban.
+### Accounts and terms of service
 
-### Why this is lower risk than the Discord client
-
-Discord banned your account because a third-party client acts **as you**, with
-your token, against a service whose terms explicitly ban "self-bots" and
-modified clients. **Plain web search has no account to ban.** The worst a search
-engine normally does to an unauthenticated scraper is block the IP or throw a
-CAPTCHA.
-
-**One exception:** if the headless Chrome runs with your real Chrome profile,
-it's logged in to your Google account, and the automated traffic gets tied to
-you. Always use a fresh, throwaway profile (`--user-data-dir` pointing at an
-empty temp dir). Never point it at your everyday profile.
-
-### Terms of service and legal
-
-- **Scraping Google, Bing or DuckDuckGo HTML breaks their terms.** In practice
-  that means blocks, not lawsuits, for a personal tool. It's a bigger problem if
-  you publish a plugin that sends thousands of users' traffic at them.
-- **Publishing a scraper vs. using one.** Putting this on GitHub as a
-  scraper-by-default makes you the author of a ToS-evading tool. Defaulting to
-  official APIs or self-hosted SearXNG keeps the repo clean.
-- **API terms.** Brave and Kagi keys come with their own terms (rate limits, no
-  reselling, sometimes attribution). Read them before shipping a shared key.
-- **Copyright of page content.** Showing a fetched page to *yourself* is the
-  same as a browser doing it. Caching or redistributing page text is not.
-
-### Getting blocked
-
-- **IP rate limiting and CAPTCHAs** from scraped engines. On a shared network
-  (dorm, office) this can affect other people on the same IP.
-- **A public SearXNG instance** will rate-limit or ban you if you hammer it.
-  Self-host instead of borrowing someone else's.
+- **There's no account to ban.** Every source is an official API or a
+  published file, used the way it's meant to be. That's the difference from a
+  third-party Discord client, which acts as your logged-in account against
+  terms that forbid it.
+- **Rate limits.** Stack Exchange allows 300 requests a day per IP without a
+  key. vimquire obeys its "back off" signal; ignoring it gets the IP throttled.
+- **Scraping search engines** (Google, Bing, DuckDuckGo pages) breaks their
+  terms. vimquire doesn't do it. The planned headless Chrome mode is only for
+  rendering a page you chose, never for scraping result pages. If you ever add
+  scraping, expect CAPTCHAs and IP blocks, which hit everyone on a shared
+  network. Use a fresh, throwaway browser profile, never your logged-in one.
+- **Licenses.** Stack Overflow and Wikipedia content is CC BY-SA. Reading it is
+  fine; reposting it means crediting the authors.
+- **DevDocs runs on donations.** vimquire downloads each doc once and only
+  re-downloads when it changes. Keep it that way.
 
 ### Security
 
-- **Untrusted content in your editor.** Web pages are hostile input. Escape
-  everything before it goes in the buffer, and never `:execute`, `:normal` or
-  modeline-evaluate anything that came from a page. Set `nomodeline` on result
-  buffers. Vim has had real modeline code-execution bugs (CVE-2019-12735).
-- **Shell injection.** Never build a shell command by string-concatenating the
-  query, since `:Search foo; rm -rf ~` must stay a search for that literal
-  text. Pass arguments as a list to `job_start()`/`jobstart()` and URL-encode
-  the query.
-- **Terminal escape sequences.** Page text can contain ANSI/OSC escapes. Strip
-  control characters before display, especially in terminal Vim.
-- **Headless Chrome is a full browser** running untrusted JavaScript. Keep it
-  sandboxed (don't pass `--no-sandbox`), use a throwaway profile, and keep it
-  updated. The `--remote-debugging-port` is unauthenticated, so bind it to
-  `127.0.0.1` only, or anything on your network can drive the browser.
-- **API keys.** Read them from environment variables. Don't commit them in a
-  vimrc that lives in a public dotfiles repo.
-- **Following links** fetches arbitrary URLs from your machine. That includes
-  `http://localhost:...` and router admin pages (SSRF-style). Consider refusing
-  private and loopback addresses for links that came from page content.
+Web pages are hostile input. What vimquire does about it:
 
-### Privacy
+- **Nothing from a page is ever run.** Pages are turned into plain text.
+  Buffers have `modeline` off, and no page text reaches `:execute` or
+  `:normal`.
+- **Control characters are stripped**, including terminal escape sequences, so
+  a page can't drive your terminal.
+- **The query can't run shell commands.** curl is started with an argument
+  list, never a shell string, and the query is URL-encoded.
+- **Only `http` and `https`**, including through redirects. No `file://`.
+- **Links from pages can't reach your own network.** Following a link to
+  `localhost`, `192.168.x.x`, `10.x.x.x` and similar is blocked. (`o` still
+  opens it in your browser if you really mean it.) This checks the address
+  written in the link; it doesn't stop a public hostname that resolves to a
+  private address.
+- **API keys** belong in environment variables, not in a config that lives in
+  a public dotfiles repo.
 
-- Every query goes to whatever backend you pick. A self-hosted SearXNG hides
-  your IP from the upstream engines, but the instance's own IP is still visible
-  to them.
-- Don't log queries to disk by default. If you add search history, keep it
-  local and make it opt-in.
+If the headless Chrome mode gets built, it needs its sandbox on (never
+`--no-sandbox`), a throwaway profile, and its remote-debugging port bound to
+`127.0.0.1` only. That port has no password.
 
-### If you write your own crawler
+### Practical
 
-- **Respect `robots.txt` and rate-limit yourself.** An aggressive crawler can
-  get your IP banned, and if it's heavy enough it looks like a denial-of-service
-  attack.
-- **Storage and bandwidth.** Even a small useful index runs to gigabytes. Your
-  ISP may object to sustained crawling from a home connection.
-- **Liability for what you index.** A crawler fetches whatever it's pointed at,
-  including illegal content. Keep it scoped to sites you choose.
-
-### Practical and maintenance
-
-- Scrapers break whenever the target site changes its markup. APIs don't.
-- Many modern pages are JavaScript-only, and a text extractor shows little or
-  nothing for them. That's the one real reason to offer headless Chrome as an
-  opt-in "render" mode.
-- Brave and Kagi can cost money if you go past the free tier.
+- Pages that need JavaScript show little or nothing. Press `o` to open them in
+  your browser.
+- Wikipedia results are often off-topic for programming searches. Turn it off
+  in `:SearchSources`, or search with `@rust`, `@so` and so on.
 
 ## License
 
-MIT (planned)
+MIT (planned; there's no LICENSE file yet)
