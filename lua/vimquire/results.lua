@@ -8,6 +8,7 @@ local util = require("vimquire.util")
 local M = {}
 
 local searches = {} -- buf -> current search
+local GUTTER = 4 -- width of the result-number column
 
 local function cancel(s)
   for _, h in ipairs(s.handles) do
@@ -69,22 +70,26 @@ function M.render(b)
   add(" " .. string.rep("─", width - 1), "vimquireDim")
 
   s.line_items = {}
+  s.title_lines = {}
+  s.title_index = {}
   local items = sorted(s)
   for i, item in ipairs(items) do
     add("")
-    local title = string.format(" %2d. %s", i, item.title)
+    local title = " " .. item.title
     local tag = "[" .. item.tag .. "]"
     add(title .. "  " .. tag)
+    table.insert(s.title_lines, #lines)
+    s.title_index[#lines] = #s.title_lines
     table.insert(hl, { #lines, "vimquireTitle", 0, #lines[#lines] - #tag - 2 })
     table.insert(hl, { #lines, "vimquireTag", #lines[#lines] - #tag, #lines[#lines] })
     s.line_items[#lines] = item
-    add("     " .. display_url(item.url), "vimquireUrl")
+    add(" " .. display_url(item.url), "vimquireUrl")
     s.line_items[#lines] = item
     if item.snippet and vim.trim(item.snippet) ~= "" then
       local words = vim.trim(util.clean(item.snippet):gsub("%s+", " "))
-      local wrapped = require("vimquire.html").render("<p>" .. words:gsub("&", "&amp;"):gsub("<", "&lt;") .. "</p>", { width = width - 5 }).lines
+      local wrapped = require("vimquire.html").render("<p>" .. words:gsub("&", "&amp;"):gsub("<", "&lt;") .. "</p>", { width = width - 1 }).lines
       for j = 1, math.min(2, #wrapped) do
-        add("     " .. wrapped[j] .. ((j == 2 and #wrapped > 2) and " …" or ""))
+        add(" " .. wrapped[j] .. ((j == 2 and #wrapped > 2) and " …" or ""))
         s.line_items[#lines] = item
       end
     end
@@ -115,7 +120,70 @@ function M.render(b)
   buf.set_lines(b, lines, hl)
 end
 
+-- Index of the result the cursor is on (0 above the first one).
+local function current_index(s, row)
+  local c = 0
+  for i, lnum in ipairs(s.title_lines or {}) do
+    if lnum > row then
+      break
+    end
+    c = i
+  end
+  return c
+end
+
+-- Like 'relativenumber', but counting results: the number column shows how
+-- many j/k presses away each result is, and the current one gets an arrow.
+function M.statuscolumn()
+  local win = vim.g.statusline_winid
+  local s = searches[vim.api.nvim_win_get_buf(win)]
+  local i = s and vim.v.virtnum == 0 and s.title_index[vim.v.lnum]
+  if not i then
+    return string.rep(" ", GUTTER)
+  end
+  local c = current_index(s, vim.api.nvim_win_get_cursor(win)[1])
+  local label = i == c and "❯" or tostring(math.abs(i - c))
+  return "%#" .. (i == c and "vimquireCurrent" or "vimquireNumber") .. "#"
+    .. string.rep(" ", GUTTER - 1 - vim.api.nvim_strwidth(label)) .. label .. " "
+end
+
+-- Show the result numbers in this window's gutter. Window options are per
+-- buffer, so they go away when the window shows something else.
+local function show_gutter(b)
+  local win = vim.fn.bufwinid(b)
+  if win == -1 then
+    return
+  end
+  local wo = vim.wo[win][0]
+  -- relativenumber makes Neovim redraw the gutter whenever the cursor moves.
+  wo.number = true
+  wo.relativenumber = true
+  wo.numberwidth = GUTTER
+  wo.statuscolumn = "%!v:lua.require'vimquire.results'.statuscolumn()"
+end
+
+-- Move the cursor count results down (dir 1) or up (dir -1).
+local function jump(b, dir)
+  local s = searches[b]
+  local titles = s and s.title_lines or {}
+  if #titles == 0 then
+    return
+  end
+  local c = current_index(s, vim.api.nvim_win_get_cursor(0)[1])
+  if dir < 0 and c == 0 then
+    return
+  end
+  local target = dir > 0 and math.min(#titles, c + vim.v.count1) or math.max(1, c - vim.v.count1)
+  vim.api.nvim_win_set_cursor(0, { titles[target], 0 })
+end
+
 local function setup_keys(b)
+  buf.map(b, "j", function()
+    jump(b, 1)
+  end, "Next result")
+  buf.map(b, "k", function()
+    jump(b, -1)
+  end, "Previous result")
   buf.map(b, "<CR>", function()
     local item = current_item(b)
     if item then
@@ -174,6 +242,14 @@ function M.search(raw, page)
   else
     b = buf.create("results")
     setup_keys(b)
+    show_gutter(b)
+    -- Coming back from a page restores the buffer; make sure the gutter is too.
+    vim.api.nvim_create_autocmd("BufWinEnter", {
+      buffer = b,
+      callback = function()
+        show_gutter(b)
+      end,
+    })
     vim.api.nvim_create_autocmd("BufWipeout", {
       buffer = b,
       once = true,

@@ -8,7 +8,6 @@ local M = {}
 M.sites = {
   require("vimquire.sources.stackoverflow"),
   require("vimquire.sources.wikipedia"),
-  require("vimquire.sources.searxng"),
 }
 
 function M.site(id)

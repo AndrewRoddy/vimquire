@@ -1,6 +1,6 @@
 -- Stack Overflow through the official Stack Exchange API. No account needed.
 -- Without a key the limit is 300 requests a day per IP; a free key from
--- stackapps.com raises it to 10,000.
+-- stackapps.com raises it to 10,000 (see config.stackexchange_key).
 local config = require("vimquire.config")
 local html = require("vimquire.html")
 local http = require("vimquire.http")
@@ -26,7 +26,7 @@ local function get(path, params, cb)
     end)
   end
   params.site = "stackoverflow"
-  params.key = config.options.stackexchange_key
+  params.key = config.stackexchange_key()
   return http.get(http.url(API .. path, params), { ua = "tool", json = true }, function(data, err)
     if not data then
       return cb(nil, err)

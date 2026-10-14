@@ -1,8 +1,24 @@
 # vimquire
 
-Search Stack Overflow, Wikipedia, DevDocs and the web from inside Neovim.
+Search Stack Overflow, Wikipedia and DevDocs from inside Neovim.
 Results open in the current window, and pages are rendered as plain text so you
 can read them without switching to a browser.
+
+> [!IMPORTANT]
+> **Read before using or sharing:**
+>
+> - **License:** All rights reserved. You may not use, copy, modify or share
+>   this software without written permission from the author. See
+>   [LICENSE](LICENSE).
+> - **Stack Overflow limit is per IP:** Without a key, the Stack Exchange API
+>   allows 300 requests a day **per IP address**. On an office or shared
+>   network, everyone behind the same IP shares those 300. Each search uses 1
+>   request and opening a question uses 2. Set your own free key to get 10,000
+>   a day (see [Stack Exchange key](#stack-exchange-key)).
+> - **Searches leave your network:** Queries are sent to Stack Exchange,
+>   Wikipedia and DevDocs. Don't search for code, names or anything else your
+>   company doesn't allow to be sent to outside services.
+> - **No API keys are included.** The plugin works without any.
 
 ```
 :Search vec push
@@ -13,11 +29,11 @@ can read them without switching to a browser.
  24 results from stackoverflow, wikipedia, devdocs
  ─────────────────────────────────────────────────────────────────────────
 
-  1. std::vec::Vec::push  [rust]
+  ❯  std::vec::Vec::push  [rust]
      devdocs.io/rust/std/vec/struct.vec#method.push
      std::vec
 
-  2. How do you push values to a vec inside an enum stuct in Rust?  [stackoverflow]
+  1  How do you push values to a vec inside an enum stuct in Rust?  [stackoverflow]
      stackoverflow.com/questions/75701102/how-do-you-push-values-to-a-vec-...
      6 votes, 2 answers, answered · rust
 ```
@@ -56,6 +72,7 @@ Results buffer:
 
 | Key | Action |
 |---|---|
+| `j` / `k` | Next / previous result. The number column on the left works like `relativenumber`, but counts results instead of lines, so `3j` goes to the one marked 3. |
 | `<CR>` | Open result |
 | `o` | Open in browser |
 | `y` | Copy URL |
@@ -80,7 +97,6 @@ Page buffer:
 | Stack Overflow | Stack Exchange API. Shows the question and answers sorted by votes. 300 requests/day per IP, or 10,000 with a free key. |
 | Wikipedia | MediaWiki API. |
 | DevDocs | Downloads a doc's search index and searches it locally. Pages are fetched when opened. |
-| SearXNG | General web search through your own SearXNG instance. Off until you set `searxng_url`. |
 
 Stack Overflow and Wikipedia are enabled by default. DevDocs has 843 doc sets
 and none are enabled by default.
@@ -97,7 +113,6 @@ etc.) are grouped under their own heading.
  ▾ Websites
      [x] Stack Overflow            stackoverflow   live, nothing stored
      [x] Wikipedia                 wikipedia       live, nothing stored
-     [ ] SearXNG (web)             searxng         set searxng_url in setup() to use
 
  ▾ DevDocs                     843 docs, 2 on: python~3.13, rust
      [ ] Angular                   angular         offline copy 5.1 MB
@@ -139,18 +154,24 @@ require("vimquire").setup({
   lowercase_alias = true,       -- expand :search to :Search
   stackexchange_key = nil,
   wikipedia_lang = "en",
-  searxng_url = nil,            -- e.g. "http://localhost:8888"
   default_enabled = { "stackoverflow", "wikipedia" },
 })
 ```
 
-To run SearXNG locally:
+### Stack Exchange key
 
-```sh
-docker run -d -p 8888:8080 --name searxng searxng/searxng
-```
+By default no key is used, so Stack Overflow is limited to 300 requests a day
+per IP address. To use your own free key (10,000 a day), register an app at
+[stackapps.com](https://stackapps.com/apps/oauth/register), then either:
 
-Then enable JSON output in its `settings.yml` (`search.formats: [html, json]`).
+- copy `.env.example` to `.env` in the plugin folder and fill in
+  `STACKEXCHANGE_KEY=` (`.env` is git-ignored, so the key is never committed),
+- or set the `STACKEXCHANGE_KEY` environment variable,
+- or pass `stackexchange_key` to `setup()`.
+
+If more than one is set, `setup()` wins, then the environment variable, then
+`.env`. With lazy.nvim the plugin folder is
+`stdpath("data")/lazy/vimquire`.
 
 ## Privacy
 
@@ -170,9 +191,6 @@ private network addresses are blocked (`o` still opens them in your browser).
 
 ## Notes
 
-- SearXNG gets its results by scraping search engines like Google and Bing,
-  which is against their terms. At personal volume it's unlikely to be a
-  problem, but those engines can rate-limit or block the IP it runs on.
 - Stack Overflow and Wikipedia content is licensed CC BY-SA.
 - Pages that depend on JavaScript won't render much. Use `o` to open them in a
   browser.

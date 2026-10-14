@@ -23,8 +23,15 @@ function M.create(kind)
   M.kinds[buf] = kind
   vim.api.nvim_win_set_buf(0, buf)
   local wo = vim.wo[0][0]
-  wo.number = false
-  wo.relativenumber = false
+  if kind == "page" then
+    -- Pages get line numbers the way the rest of your editor has them
+    -- (number, relativenumber or both); plain numbers if you use neither.
+    wo.relativenumber = vim.go.relativenumber
+    wo.number = vim.go.number or not vim.go.relativenumber
+  else
+    wo.number = false
+    wo.relativenumber = false
+  end
   wo.signcolumn = "no"
   wo.foldcolumn = "0"
   wo.spell = false
@@ -51,7 +58,12 @@ end
 
 function M.width(buf)
   local win = vim.fn.bufwinid(buf)
-  local w = win ~= -1 and vim.api.nvim_win_get_width(win) or 80
+  local w = 80
+  if win ~= -1 then
+    -- Leave out the gutter (line numbers and the like).
+    local info = vim.fn.getwininfo(win)[1]
+    w = info.width - info.textoff
+  end
   return math.max(30, math.min(require("vimquire.config").options.width, w - 2))
 end
 
