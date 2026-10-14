@@ -25,21 +25,24 @@ can read them without switching to a browser.
 ```
 
 ```
- vimquire » vec push
- 24 results from stackoverflow, wikipedia, devdocs
- ─────────────────────────────────────────────────────────────────────────
+      vimquire » vec push
+      24 results from stackoverflow, wikipedia, devdocs
+      ─────────────────────────────────────────────────────────────────────
 
-  ❯  std::vec::Vec::push  [rust]
-     devdocs.io/rust/std/vec/struct.vec#method.push
-     std::vec
+   ❯  std::vec::Vec::push  [rust]
+      devdocs.io/rust/std/vec/struct.vec#method.push
+      std::vec
 
-  1  How do you push values to a vec inside an enum stuct in Rust?  [stackoverflow]
-     stackoverflow.com/questions/75701102/how-do-you-push-values-to-a-vec-...
-     6 votes, 2 answers, answered · rust
+   1  How do you push values to a vec inside an enum stuct in Rust?  [stackoverflow]
+      stackoverflow.com/questions/75701102/how-do-you-push-values-to-a-vec-...
+      6 votes, 2 answers, answered · rust
 ```
 
-Requires Neovim 0.10+ and `curl`. This is an early version, so expect rough
-edges.
+## Requirements
+
+- Neovim 0.10 or newer
+- `curl` on your `PATH` (included with Windows 10 and later, macOS and most
+  Linux distributions)
 
 ## Installation
 
@@ -50,12 +53,43 @@ edges.
   "AndrewRoddy/vimquire",
   cmd = { "Search", "SearchOpen", "SearchSources", "SearchAdd", "SearchRemove" },
   init = function()
-    -- lets you type :search in lowercase
+    -- lets you type :search in lowercase before the plugin has loaded
     vim.cmd([[cnoreabbrev <expr> search getcmdtype() ==# ':' && getcmdline() ==# 'search' ? 'Search' : 'search']])
   end,
   opts = {},
 }
 ```
+
+[vim-plug](https://github.com/junegunn/vim-plug):
+
+```vim
+Plug 'AndrewRoddy/vimquire'
+```
+
+Without a plugin manager, clone it into your packages folder:
+
+```sh
+# Linux / macOS
+git clone https://github.com/AndrewRoddy/vimquire ~/.local/share/nvim/site/pack/plugins/start/vimquire
+# Windows (PowerShell)
+git clone https://github.com/AndrewRoddy/vimquire "$env:LOCALAPPDATA\nvim-data\site\pack\plugins\start\vimquire"
+```
+
+Then run `:helptags ALL` once so `:help vimquire` works.
+
+Calling `setup()` is optional. The plugin works with the defaults.
+
+## Getting started
+
+1. Run `:checkhealth vimquire` to make sure Neovim and curl are set up.
+2. Search: `:Search rust borrow checker`. Move with `j`/`k`, press `<CR>` to
+   read a result, and `q` to go back.
+3. Add documentation for what you use: `:SearchAdd rust python~3.13`, or browse
+   everything with `:SearchSources`.
+4. If you search Stack Overflow a lot, or share a network with other people,
+   [set your own key](#stack-exchange-key).
+
+Everything is also in `:help vimquire`.
 
 ## Usage
 
@@ -80,7 +114,7 @@ Results buffer:
 | `s` | Sources |
 | `q` | Go back |
 
-Page buffer:
+Page buffer (line numbers follow your `number` / `relativenumber` settings):
 
 | Key | Action |
 |---|---|
@@ -152,7 +186,7 @@ require("vimquire").setup({
   private = true,               -- remove :Search from command history
   proxy = nil,                  -- e.g. "socks5h://127.0.0.1:9050"
   lowercase_alias = true,       -- expand :search to :Search
-  stackexchange_key = nil,
+  stackexchange_key = nil,      -- see "Stack Exchange key" below
   wikipedia_lang = "en",
   default_enabled = { "stackoverflow", "wikipedia" },
 })
@@ -161,17 +195,25 @@ require("vimquire").setup({
 ### Stack Exchange key
 
 By default no key is used, so Stack Overflow is limited to 300 requests a day
-per IP address. To use your own free key (10,000 a day), register an app at
-[stackapps.com](https://stackapps.com/apps/oauth/register), then either:
+per IP address, shared with everyone on your network. To use your own free key
+(10,000 a day), register an app at
+[stackapps.com](https://stackapps.com/apps/oauth/register), then set it in one
+of these places. The first one found is used:
 
-- copy `.env.example` to `.env` in the plugin folder and fill in
-  `STACKEXCHANGE_KEY=` (`.env` is git-ignored, so the key is never committed),
-- or set the `STACKEXCHANGE_KEY` environment variable,
-- or pass `stackexchange_key` to `setup()`.
+1. `stackexchange_key` in `setup()`
+2. The `STACKEXCHANGE_KEY` environment variable
+3. **Recommended:** a file named `vimquire.env` in your Neovim config folder
+   (run `:echo stdpath("config")` to find it), containing:
+   ```
+   STACKEXCHANGE_KEY=your-key
+   ```
+   This keeps the key out of your dotfiles' Lua code and survives plugin
+   reinstalls.
+4. A `.env` file in the plugin folder, same format (copy `.env.example`). It's
+   git-ignored, but reinstalling the plugin deletes it.
 
-If more than one is set, `setup()` wins, then the environment variable, then
-`.env`. With lazy.nvim the plugin folder is
-`stdpath("data")/lazy/vimquire`.
+Restart Neovim after changing an env file. `:checkhealth vimquire` shows
+whether a key was found.
 
 ## Privacy
 
@@ -189,11 +231,23 @@ terminal escape sequences are stripped, buffers have `modeline` disabled, and
 curl is restricted to http/https. Links in pages that point to localhost or
 private network addresses are blocked (`o` still opens them in your browser).
 
+## Troubleshooting
+
+Start with `:checkhealth vimquire`.
+
+- **"No sources are turned on"**: run `:SearchSources` and turn some on.
+- **Stack Overflow says "too many requests from this IP" or "Stack Exchange
+  asked us to wait"**: your IP's daily limit is used up, or requests were sent too
+  quickly. Wait, or [set a key](#stack-exchange-key).
+- **A page is almost empty**: it needs JavaScript. Press `o` to open it in your
+  browser.
+- **`:search` doesn't turn into `:Search`**: with lazy loading, add the `init`
+  line from the [lazy.nvim example](#installation).
+
 ## Notes
 
 - Stack Overflow and Wikipedia content is licensed CC BY-SA.
-- Pages that depend on JavaScript won't render much. Use `o` to open them in a
-  browser.
+- This is an early version, so expect rough edges.
 
 ## Roadmap
 
@@ -204,7 +258,6 @@ private network addresses are blocked (`o` still opens them in your browser).
 - [ ] Brave Search and Kagi
 - [ ] Optional headless Chrome rendering for JavaScript-heavy pages
 - [ ] Optional search history
-- [ ] `:help vimquire`
 
 ## Development
 
@@ -212,4 +265,9 @@ private network addresses are blocked (`o` still opens them in your browser).
 nvim --headless -u NONE -l tests/smoke.lua
 ```
 
-The smoke test hits the real APIs, so it needs an internet connection.
+The smoke test hits the real APIs, so it needs an internet connection. See
+[CHANGELOG.md](CHANGELOG.md) for what changed in each version.
+
+## License
+
+Copyright (c) 2026 Andrew Roddy. All rights reserved. See [LICENSE](LICENSE).

@@ -6,7 +6,7 @@ local M = {}
 -- Web pages get a common browser user agent so the request doesn't stand out.
 M.BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 -- APIs get an honest one: Wikipedia requires it. It names the tool, not you.
-M.TOOL_UA = "vimquire/0.1 (+https://github.com/AndrewRoddy/vimquire)"
+M.TOOL_UA = "vimquire/" .. config.version .. " (+https://github.com/AndrewRoddy/vimquire)"
 
 --- Fetch a URL with curl without blocking the editor.
 --- opts.ua: "browser" (default) or "tool"

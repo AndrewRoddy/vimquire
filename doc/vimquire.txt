@@ -1,0 +1,248 @@
+*vimquire.txt*  Search Stack Overflow, Wikipedia and DevDocs from Neovim
+
+Version 0.1.0
+Copyright (c) 2026 Andrew Roddy. All rights reserved. See |vimquire-license|.
+
+==============================================================================
+CONTENTS                                                   *vimquire-contents*
+
+  1. Introduction ............................... |vimquire-intro|
+  2. Requirements ............................... |vimquire-requirements|
+  3. Commands ................................... |vimquire-commands|
+  4. Results list ............................... |vimquire-results|
+  5. Pages ...................................... |vimquire-pages|
+  6. Sources .................................... |vimquire-sources|
+  7. Configuration .............................. |vimquire-config|
+  8. Stack Exchange key ......................... |vimquire-key|
+  9. Privacy .................................... |vimquire-privacy|
+ 10. Troubleshooting ............................ |vimquire-troubleshooting|
+ 11. License .................................... |vimquire-license|
+
+==============================================================================
+1. INTRODUCTION                                               *vimquire-intro*
+
+vimquire searches Stack Overflow, Wikipedia and DevDocs at the same time and
+shows the results in the current window. Opening a result shows the page as
+plain text, so you can read it without switching to a browser.
+
+Searches are sent to outside services (Stack Exchange, Wikipedia and DevDocs).
+Don't search for code, names or anything else that shouldn't leave your
+network. DevDocs searches run locally once a doc is turned on.
+
+==============================================================================
+2. REQUIREMENTS                                        *vimquire-requirements*
+
+- Neovim 0.10 or newer
+- `curl` on your PATH
+
+Run `:checkhealth vimquire` to check both.
+
+==============================================================================
+3. COMMANDS                                                *vimquire-commands*
+
+                                                                     *:Search*
+:Search {query}         Search every source that is turned on. With no
+                        {query}, asks for one. Typing `:search` in lowercase
+                        also works (see |vimquire-lowercase_alias|).
+
+:Search @{source} {query}
+                        Search one source only. {source} is a site name or
+                        alias (`stackoverflow`, `so`, `stack`, `wikipedia`,
+                        `wiki`, `wp`) or a DevDocs doc, e.g. `@rust` or
+                        `@python`.
+                        Examples: >
+                            :Search @so borrow checker lifetimes
+                            :Search @rust Vec push
+<
+                                                                 *:SearchOpen*
+:SearchOpen {url}       Open any web page as plain text.
+
+                                                              *:SearchSources*
+:SearchSources          Open the list of sources to turn on and off. See
+                        |vimquire-sources|.
+
+                                                                  *:SearchAdd*
+:SearchAdd {source} ... Turn sources on. DevDocs docs are downloaded.
+                        Example: `:SearchAdd rust python~3.13`
+
+                                                               *:SearchRemove*
+:SearchRemove {source} ...
+                        Turn sources off. DevDocs docs are deleted from disk.
+
+==============================================================================
+4. RESULTS LIST                                             *vimquire-results*
+
+Results from all sources are merged into one list, best first. The number
+column on the left works like 'relativenumber', but counts results instead
+of lines: each result shows how many |j| or |k| presses away it is, and the
+current one is marked with `❯`.
+
+  j / k         Next / previous result. `3j` goes to the result marked 3.
+  <CR>          Open the result as a page
+  o             Open the result in your browser
+  y             Copy the URL
+  n / p         Next / previous page of results
+  s             Open |:SearchSources|
+  q             Go back to where you were
+
+==============================================================================
+5. PAGES                                                      *vimquire-pages*
+
+Pages show line numbers the same way the rest of your editor does ('number',
+'relativenumber' or both). If you use neither, pages show 'number'.
+
+Links are shown as `[n]` after the link text.
+
+  <CR>          Follow the link under the cursor
+  <Tab>         Next link
+  <S-Tab>       Previous link
+  o             Open the page in your browser
+  y             Copy the URL
+  q             Go back
+
+Pages that depend on JavaScript won't show much. Use `o` to open them in a
+browser.
+
+==============================================================================
+6. SOURCES                                                  *vimquire-sources*
+
+Stack Overflow  Stack Exchange API. Shows the question, then the answers
+                sorted by votes. Each search uses 1 request and opening a
+                question uses 2. See |vimquire-key| for the daily limit.
+Wikipedia       MediaWiki API, in the language set by `wikipedia_lang`.
+DevDocs         Hundreds of documentation sets. Turning a doc on downloads
+                its search index, which is then searched locally. Pages are
+                fetched when you open them, unless you download the offline
+                copy.
+
+Stack Overflow and Wikipedia are on by default. No DevDocs docs are.
+
+In |:SearchSources|:
+
+  <Space> / <CR>  Turn a source on or off, or open/close a section
+  l / h           Expand / collapse
+  O               Download or delete a doc's offline copy
+  u               Update docs that have a newer version
+  f / F           Filter the list / clear the filter
+  q               Close
+
+Turning a doc off deletes its files. Downloads are stored in `data_dir`.
+
+==============================================================================
+7. CONFIGURATION                                             *vimquire-config*
+
+Calling setup() is optional. These are the defaults: >lua
+
+    require("vimquire").setup({
+      data_dir = vim.fn.stdpath("data") .. "/vimquire",
+      curl = "curl",
+      timeout = 30,
+      results = 20,
+      per_source = 8,
+      width = 100,
+      private = true,
+      proxy = nil,
+      lowercase_alias = true,
+      stackexchange_key = nil,
+      wikipedia_lang = "en",
+      default_enabled = { "stackoverflow", "wikipedia" },
+      catalog_max_age = 7 * 24 * 3600,
+    })
+<
+data_dir                                            *vimquire-data_dir*
+        Where DevDocs downloads and the list of enabled sources are stored.
+
+curl                                                *vimquire-curl*
+        The curl program to run.
+
+timeout                                             *vimquire-timeout*
+        Seconds to wait for each request.
+
+results                                             *vimquire-results-option*
+        Results shown per page.
+
+per_source                                          *vimquire-per_source*
+        The most results any one source adds to a page.
+
+width                                               *vimquire-width*
+        Text width for pages. Capped to the window width.
+
+private                                             *vimquire-private*
+        Remove `:Search` and `:SearchOpen` from command history, so queries
+        aren't saved in |shada|.
+
+proxy                                               *vimquire-proxy*
+        Send every request through this proxy, e.g.
+        `"socks5h://127.0.0.1:9050"` for Tor.
+
+lowercase_alias                                     *vimquire-lowercase_alias*
+        Expand `:search` to `:Search`.
+
+stackexchange_key                                *vimquire-stackexchange_key*
+        Your Stack Exchange key. See |vimquire-key| for other ways to set it.
+
+wikipedia_lang                                      *vimquire-wikipedia_lang*
+        Wikipedia language code, e.g. `"de"`.
+
+default_enabled                                     *vimquire-default_enabled*
+        Sites turned on the first time vimquire runs.
+
+catalog_max_age                                     *vimquire-catalog_max_age*
+        Seconds before the DevDocs catalog is downloaded again.
+
+==============================================================================
+8. STACK EXCHANGE KEY                                           *vimquire-key*
+
+Without a key, the Stack Exchange API allows 300 requests a day per IP
+address. Everyone on the same network (an office, for example) usually shares
+one IP, and so shares those 300. With a free key the limit is 10,000 a day.
+
+1. Register an app at https://stackapps.com/apps/oauth/register to get a key.
+2. Set it in one of these places. The first one found is used:
+
+   - `stackexchange_key` in setup()
+   - the `STACKEXCHANGE_KEY` environment variable
+   - a file named `vimquire.env` in your Neovim config folder
+     (`:echo stdpath("config")`) containing: >
+         STACKEXCHANGE_KEY=your-key
+<   - a `.env` file in the plugin folder, same format. Copy `.env.example`.
+     Reinstalling the plugin deletes this file, so prefer `vimquire.env`.
+
+The env files are read once, so restart Neovim after changing them.
+`:checkhealth vimquire` shows whether a key was found.
+
+==============================================================================
+9. PRIVACY                                                  *vimquire-privacy*
+
+- No cookies are stored and no referrer is sent.
+- With `private` on, searches are removed from command history. Nothing is
+  written to disk except the list of enabled sources and DevDocs downloads.
+- DevDocs searches run locally. Only pages you open are fetched.
+- Every site you search or open can see your IP address. Use `proxy` to hide
+  it.
+
+==============================================================================
+10. TROUBLESHOOTING                                 *vimquire-troubleshooting*
+
+Run `:checkhealth vimquire` first.
+
+"No sources are turned on"
+        Run |:SearchSources| and turn some on.
+
+Stack Overflow says "too many requests from this IP" or "Stack Exchange
+asked us to wait"
+        The daily limit for your IP is used up, or you sent requests too
+        quickly. Wait, or set a key (|vimquire-key|).
+
+A page is almost empty
+        It needs JavaScript. Press `o` to open it in your browser.
+
+==============================================================================
+11. LICENSE                                                 *vimquire-license*
+
+All rights reserved. You may not use, copy, modify or share this software
+without written permission from the author. See the LICENSE file.
+
+Stack Overflow and Wikipedia content is licensed CC BY-SA.
+
+ vim:tw=78:ts=8:ft=help:norl:

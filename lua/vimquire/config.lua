@@ -1,5 +1,7 @@
 local M = {}
 
+M.version = "0.1.0"
+
 M.defaults = {
   -- Where downloaded indexes and the enabled-sources list live.
   data_dir = vim.fn.stdpath("data") .. "/vimquire",
@@ -17,7 +19,7 @@ M.defaults = {
   -- Expand a lowercase :search into :Search.
   lowercase_alias = true,
   -- Free key from stackapps.com raises the daily limit from 300 to 10,000.
-  -- Leave nil to use $STACKEXCHANGE_KEY or the .env file in the plugin folder.
+  -- Leave nil to use $STACKEXCHANGE_KEY or a vimquire.env file (see M.env_files).
   stackexchange_key = nil,
   wikipedia_lang = "en",
   -- Sites turned on the first time vimquire runs. Nothing is downloaded for these.
@@ -40,29 +42,44 @@ end
 -- The plugin folder: this file is lua/vimquire/config.lua inside it.
 M.root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h:h")
 
-local env_file
+--- Where KEY=VALUE files are read from, first match wins: vimquire.env in
+--- your Neovim config folder, then .env in the plugin folder.
+function M.env_files()
+  return { vim.fn.stdpath("config") .. "/vimquire.env", M.root .. "/.env" }
+end
 
---- KEY=VALUE pairs from the .env file in the plugin folder. Read once.
-function M.env()
-  if env_file then
-    return env_file
-  end
-  env_file = {}
-  local f = io.open(M.root .. "/.env", "r")
+local function read_env(path)
+  local vars = {}
+  local f = io.open(path, "r")
   if not f then
-    return env_file
+    return vars
   end
   for line in f:lines() do
     local k, v = line:match("^%s*([%w_]+)%s*=%s*(.-)%s*$")
-    if k then
-      env_file[k] = v:match('^"(.*)"$') or v:match("^'(.*)'$") or v
+    v = k and (v:match('^"(.*)"$') or v:match("^'(.*)'$") or v)
+    -- Skip blank values so an empty KEY= doesn't hide one set elsewhere.
+    if v and v ~= "" then
+      vars[k] = v
     end
   end
   f:close()
-  return env_file
+  return vars
 end
 
---- The Stack Exchange key from setup(), $STACKEXCHANGE_KEY or .env, in that
+local env_vars
+
+--- Variables from the env files. Read once, or again with reload.
+function M.env(reload)
+  if reload or not env_vars then
+    env_vars = {}
+    for _, path in ipairs(vim.fn.reverse(M.env_files())) do
+      env_vars = vim.tbl_extend("force", env_vars, read_env(path))
+    end
+  end
+  return env_vars
+end
+
+--- The Stack Exchange key from setup(), $STACKEXCHANGE_KEY or an env file, in that
 --- order. nil means no key: the shared limit of 300 requests a day per IP.
 function M.stackexchange_key()
   local keys = { M.options.stackexchange_key, vim.env.STACKEXCHANGE_KEY, M.env().STACKEXCHANGE_KEY }
