@@ -1,4 +1,5 @@
 local config = require("vimquire.config")
+local custom = require("vimquire.sources.custom")
 local devdocs = require("vimquire.sources.devdocs")
 local state = require("vimquire.state")
 
@@ -49,6 +50,27 @@ function M.targets(filter)
         end)
       end,
     })
+  end
+  for _, id in ipairs(custom.ids()) do
+    local info = state.custom(id)
+    if info.enabled and info.kind and (not filter or custom.matches(id, filter)) then
+      local template = info.kind == "template"
+      table.insert(targets, {
+        name = id,
+        -- Set for sites searched through their own results page.
+        url_for = template and function(query)
+          return custom.search_url(id, query)
+        end or nil,
+        run = function(query, page, cb)
+          vim.schedule(function()
+            if template then
+              return cb(page == 1 and { custom.template_result(id, query) } or {})
+            end
+            cb(custom.search(id, query, page, n))
+          end)
+        end,
+      })
+    end
   end
   return targets
 end

@@ -17,7 +17,7 @@ function M.get()
   end
   state = util.read_json(path())
   if type(state) ~= "table" then
-    state = { sites = {}, devdocs = {} }
+    state = { sites = {}, devdocs = {}, custom = {} }
     for _, id in ipairs(config.options.default_enabled) do
       state.sites[id] = true
     end
@@ -25,6 +25,7 @@ function M.get()
   end
   state.sites = state.sites or {}
   state.devdocs = state.devdocs or {}
+  state.custom = state.custom or {}
   return state
 end
 
@@ -55,6 +56,22 @@ function M.enabled_docs()
   local slugs = vim.tbl_keys(M.get().devdocs)
   table.sort(slugs)
   return slugs
+end
+
+--- A site added with :SearchSite: { url, name, kind, enabled, count, pages }.
+function M.custom(id)
+  return M.get().custom[id]
+end
+
+function M.set_custom(id, info)
+  M.get().custom[id] = info
+  M.save()
+end
+
+function M.custom_ids()
+  local ids = vim.tbl_keys(M.get().custom)
+  table.sort(ids)
+  return ids
 end
 
 return M

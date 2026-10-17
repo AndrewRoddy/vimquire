@@ -26,6 +26,8 @@ M.defaults = {
   default_enabled = { "stackoverflow", "wikipedia" },
   -- Re-fetch the DevDocs catalog when it is older than this (seconds).
   catalog_max_age = 7 * 24 * 3600,
+  -- The most pages :SearchSite fetches from a site with no search index.
+  site_max_pages = 300,
 }
 
 M.options = vim.deepcopy(M.defaults)

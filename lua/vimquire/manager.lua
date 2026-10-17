@@ -1,9 +1,11 @@
 -- :SearchSources, the list of everything you can search. Websites and
 -- DevDocs are accordions; DevDocs docs with several versions (Python,
 -- Node...) are accordions inside it. Turning a doc off deletes its files;
--- turning it back on downloads them again.
+-- turning it back on downloads them again. Sites added with :SearchSite are
+-- listed under "Your sites" and keep their files while off.
 local buf = require("vimquire.buf")
 local config = require("vimquire.config")
+local custom = require("vimquire.sources.custom")
 local devdocs = require("vimquire.sources.devdocs")
 local sources = require("vimquire.sources")
 local state = require("vimquire.state")
@@ -11,7 +13,7 @@ local util = require("vimquire.util")
 
 local M = {}
 
-local expanded = { sites = true, devdocs = false }
+local expanded = { sites = true, custom = true, devdocs = false }
 local filter = nil
 local mbuf
 local rows = {} -- lnum -> row
@@ -114,9 +116,15 @@ function M.render()
       on_sites = on_sites + 1
     end
   end
+  for _, id in ipairs(custom.ids()) do
+    disk = disk + custom.disk_size(id)
+    if state.custom(id).enabled then
+      on_sites = on_sites + 1
+    end
+  end
 
   add(string.format(" vimquire sources   %d on · %s on disk", on_sites + #enabled, util.human_size(disk)), "vimquireHeading")
-  add(" <Space> on/off   <CR> open/close   O offline copy   u update docs   f filter   F clear   q close", "vimquireDim")
+  add(" <Space> on/off   <CR> open/close   a add site   O offline copy   u update docs   f filter   q close", "vimquireDim")
   if filter then
     add(" filter: " .. filter, "vimquireBusy")
   end
@@ -138,6 +146,32 @@ function M.render()
         local note = site.available() and site.note or site.unavailable_note()
         add_check("     " .. (on and "[x] " or "[ ] ") .. pad(site.label, 26) .. pad(site.id, 16),
           { kind = "site", id = site.id, parent = "sites" }, on, note, "vimquireDim")
+      end
+    end
+    add("")
+  end
+
+  -- Your sites
+  local custom_rows = vim.tbl_filter(function(id)
+    local info = state.custom(id)
+    return matches(info.name, id, info.url)
+  end, custom.ids())
+  if not filter or #custom_rows > 0 then
+    local open = expanded.custom or filter ~= nil
+    add(" " .. pad((open and OPEN or CLOSED) .. " Your sites", 30) .. string.format("%d added", #custom.ids()),
+      "vimquireGroup", { kind = "group", key = "custom" })
+    if open then
+      for _, id in ipairs(custom_rows) do
+        local info = state.custom(id)
+        local box = custom.building(id) and "[*] " or (info.enabled and "[x] " or "[ ] ")
+        local status, group = custom.status(id)
+        add_check("     " .. box .. pad(vim.fn.strcharpart(info.name, 0, 25), 26) .. pad(id, 16),
+          { kind = "custom", id = id, parent = "custom" }, info.enabled, status, group)
+      end
+      if #custom_rows == 0 then
+        add("     a adds any site by URL, e.g. https://doc.rust-lang.org/book/", "vimquireDim")
+      else
+        add("     a add   D delete   R download again", "vimquireDim")
       end
     end
     add("")
@@ -195,7 +229,7 @@ function M.render()
       end
     end
   end
-  if filter and #site_rows == 0 and #fams == 0 then
+  if filter and #site_rows == 0 and #custom_rows == 0 and #fams == 0 then
     add(" Nothing matches \"" .. filter .. "\". F clears the filter.", "vimquireDim")
   end
   buf.set_lines(mbuf, lines, hl)
@@ -231,6 +265,16 @@ end
 
 --- Turn a source on or off. Docs are downloaded or deleted.
 function M.toggle_source(id, on, done)
+  if state.custom(id) then
+    custom.set_enabled(id, on, function(ok, err)
+      if not ok then
+        util.notify("couldn't download " .. id .. ": " .. tostring(err), vim.log.levels.ERROR)
+      end
+      rerender()
+    end)
+    rerender()
+    return done and done(true)
+  end
   local site = sources.site(id)
   if site then
     if on and not site.available() then
@@ -274,6 +318,8 @@ end
 local function is_on(row)
   if row.kind == "site" then
     return state.site_enabled(row.id)
+  elseif row.kind == "custom" then
+    return state.custom(row.id).enabled
   end
   return state.doc(row.slug) ~= nil or devdocs.downloading(row.slug) ~= nil
 end
@@ -333,6 +379,33 @@ local function setup_keys(b)
     end)
     rerender()
   end, "Download/delete offline copy")
+  buf.map(b, "a", function()
+    vim.ui.input({ prompt = "Site URL to search: " }, function(input)
+      if input and vim.trim(input) ~= "" then
+        require("vimquire").add_site(nil, input)
+      end
+    end)
+  end, "Add a site by URL")
+  buf.map(b, "D", function()
+    local row = current_row()
+    if not row or row.kind ~= "custom" then
+      return util.notify("D deletes sites under Your sites")
+    end
+    local freed = custom.remove(row.id)
+    util.notify("deleted " .. row.id .. " (" .. util.human_size(freed) .. ")")
+    rerender("custom")
+  end, "Delete site")
+  buf.map(b, "R", function()
+    local row = current_row()
+    if not row or row.kind ~= "custom" or state.custom(row.id).kind == "template" then
+      return util.notify("R downloads a site under Your sites again")
+    end
+    custom.build(row.id, function(ok, err)
+      util.notify(ok and ("updated " .. row.id) or ("couldn't download " .. row.id .. ": " .. tostring(err)),
+        ok and vim.log.levels.INFO or vim.log.levels.ERROR)
+      rerender()
+    end)
+  end, "Download site again")
   buf.map(b, "u", function()
     util.notify("checking for doc updates...")
     devdocs.update(function(updated, err)

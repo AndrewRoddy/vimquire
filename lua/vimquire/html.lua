@@ -52,10 +52,45 @@ local BLOCK = {
 }
 
 local function attr(attrs, name)
+  -- Attribute names are case-insensitive: HREF works like href.
+  name = name:gsub("%a", function(c)
+    return "[" .. c:lower() .. c:upper() .. "]"
+  end)
   local v = attrs:match("%s" .. name .. '%s*=%s*"([^"]*)"')
     or attrs:match("%s" .. name .. "%s*=%s*'([^']*)'")
     or attrs:match("%s" .. name .. "%s*=%s*([^%s\"'>]+)")
   return v and M.decode_entities(v)
+end
+
+--- The page's own previous/next/contents links, from rel="prev" / rel="next"
+--- (mdBook, Sphinx and most doc generators), rel="contents" or "toc", and
+--- mdBook's toc.html sidebar. Returns { prev, next, contents }, each
+--- { href, title } with title possibly nil.
+function M.page_nav(html)
+  local nav = {}
+  for tag, attrs in html:gmatch("<(%a+)(%s[^>]*)>") do
+    tag = tag:lower()
+    if tag == "a" or tag == "link" then
+      local href = attr(attrs, "href")
+      local title = attr(attrs, "title")
+      -- mdBook's arrows are titled "Next chapter", which says nothing.
+      if title and (title:lower():match("^next") or title:lower():match("^prev")) then
+        title = nil
+      end
+      for word in (attr(attrs, "rel") or ""):lower():gmatch("%S+") do
+        local key = (word == "previous" and "prev") or (word == "toc" and "contents") or word
+        if href and (key == "prev" or key == "next" or key == "contents") and not nav[key] then
+          nav[key] = { href = href, title = title }
+        end
+      end
+    elseif tag == "iframe" and not nav.contents then
+      local src = attr(attrs, "src")
+      if src and src:match("toc%.html$") then
+        nav.contents = { href = src, title = "Contents" }
+      end
+    end
+  end
+  return nav
 end
 
 -- Case-insensitive pattern for a closing tag, e.g. "</[sS][cC]...".
@@ -132,6 +167,10 @@ function M.render(html, opts)
       return
     end
     local p = prefix()
+    -- Items that number themselves ("1.2. Hello, World!") don't need ours too.
+    if bullet and bullet:match("^%d") and text:match("^%d+%.[%d.]*%s") then
+      bullet = ""
+    end
     local first = p .. (bullet or "")
     local rest = p .. string.rep(" ", bullet and vim.api.nvim_strwidth(bullet) or 0)
     bullet = nil
@@ -216,11 +255,17 @@ function M.render(html, opts)
     elseif name == "ul" or name == "ol" then
       flush()
       table.insert(indents, #lists > 0 and "  " or "")
-      table.insert(lists, { ordered = name == "ol", n = 0 })
+      -- Tables of contents (mdBook's "chapter"/"section" lists) number
+      -- their own entries, or leave them unnumbered on purpose.
+      local class = (attr(attrs, "class") or ""):lower()
+      local toc = class:find("chapter", 1, true) or class:find("section", 1, true) or class:find("toc", 1, true)
+      table.insert(lists, { ordered = name == "ol", n = 0, plain = toc ~= nil })
     elseif name == "li" then
       flush()
       local list = lists[#lists]
-      if list and list.ordered then
+      if list and list.plain then
+        bullet = ""
+      elseif list and list.ordered then
         list.n = list.n + 1
         bullet = list.n .. ". "
       else

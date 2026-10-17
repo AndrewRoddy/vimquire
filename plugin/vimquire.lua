@@ -56,6 +56,10 @@ command("SearchOpen", function(o)
   require("vimquire").open(o.args)
 end, { nargs = 1, desc = "Read a web page as text" })
 
+command("SearchFollow", function(o)
+  require("vimquire.page").follow_command(o.args)
+end, { nargs = "?", desc = "Follow a link on a vimquire page" })
+
 command("SearchSources", function()
   require("vimquire").sources()
 end, { nargs = 0, desc = "Turn search sources on and off" })
@@ -70,11 +74,18 @@ end, {
   end,
 })
 
+command("SearchSite", function(o)
+  if #o.fargs > 2 then
+    return require("vimquire.util").notify("usage: :SearchSite [name] {url}", vim.log.levels.WARN)
+  end
+  require("vimquire").add_site(o.fargs[2] and o.fargs[1], o.fargs[2] or o.fargs[1])
+end, { nargs = "+", desc = "Add any site as a search source" })
+
 command("SearchRemove", function(o)
   require("vimquire").remove(o.fargs)
 end, {
   nargs = "+",
-  desc = "Turn sources off (deletes their downloads)",
+  desc = "Turn sources off (deletes their downloads; forgets added sites)",
   complete = function(lead)
     return require("vimquire").complete_remove(lead)
   end,

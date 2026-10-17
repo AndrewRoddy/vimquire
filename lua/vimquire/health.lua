@@ -50,6 +50,11 @@ function M.check()
       table.insert(on, site.id)
     end
   end
+  for _, id in ipairs(state.custom_ids()) do
+    if state.custom(id).enabled then
+      table.insert(on, id)
+    end
+  end
   vim.list_extend(on, state.enabled_docs())
   if #on > 0 then
     h.ok("on: " .. table.concat(on, ", "))

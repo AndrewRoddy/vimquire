@@ -289,6 +289,45 @@ function M.search(query, slugs, page, per_source)
   return results
 end
 
+--- The pages before and after path, in the order the doc's index lists them
+--- within the page's type (e.g. the Rust Book's chapters under "Guide").
+--- Returns { prev, next }, each { path, name }, or nil if the doc's index
+--- isn't downloaded.
+function M.neighbors(slug, path)
+  local entries = load_index(slug)
+  if not entries then
+    return nil
+  end
+  local page = path:gsub("#.*$", "")
+  local kind
+  for _, e in ipairs(entries) do
+    if e.path:gsub("#.*$", "") == page then
+      kind = e.type
+      break
+    end
+  end
+  if not kind then
+    return nil
+  end
+  local pages, names = {}, {}
+  for _, e in ipairs(entries) do
+    local p = e.path:gsub("#.*$", "")
+    if e.type == kind and not names[p] then
+      table.insert(pages, p)
+      names[p] = e.name
+    end
+  end
+  for i, p in ipairs(pages) do
+    if p == page then
+      local prev, nxt = pages[i - 1], pages[i + 1]
+      return {
+        prev = prev and { path = prev, name = names[prev] },
+        next = nxt and { path = nxt, name = names[nxt] },
+      }
+    end
+  end
+end
+
 --- Get a page's HTML: from the offline copy if there is one, else from DevDocs.
 function M.fetch_page(slug, path, cb)
   local file = path:gsub("#.*$", "")

@@ -234,6 +234,12 @@ function M.search(raw, page)
     query = raw
   end
 
+  local targets = sources.targets(filter)
+  -- "@site query" for a site searched through its own results page: go there.
+  if filter and #targets == 1 and targets[1].url_for then
+    return require("vimquire.page").open({ kind = "web", url = targets[1].url_for(query) })
+  end
+
   local b = vim.api.nvim_get_current_buf()
   if buf.is_ours(b, "results") then
     if searches[b] then
@@ -266,7 +272,7 @@ function M.search(raw, page)
     handles = {}, names = {}, line_items = {} }
   searches[b] = s
   local order = 0
-  for _, target in ipairs(sources.targets(filter)) do
+  for _, target in ipairs(targets) do
     table.insert(s.names, target.name)
     s.pending[target.name] = true
     local h = target.run(query, page, function(results, err)

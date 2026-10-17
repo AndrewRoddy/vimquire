@@ -35,6 +35,12 @@ local r = html.render('<h1>T</h1><p>See <a href="/x">this</a> and <code>v[0]</co
 check(r.lines[1] == "# T", "heading rendered")
 check(#r.links == 1 and #r.spots == 1, "one link, one spot")
 check(not table.concat(r.lines, "\n"):find("alert"), "script dropped")
+local nav = html.page_nav('<link rel="prev" title="4. Flow" href="flow.html"><a rel="next prefetch" title="Next chapter" href="ch5.html">→</a><iframe src="../toc.html"></iframe>')
+check(nav.prev.href == "flow.html" and nav.prev.title == "4. Flow" and nav.next.href == "ch5.html" and nav.next.title == nil
+  and nav.contents.href == "../toc.html", "page prev/next/contents links")
+local toc = html.render('<ol class="chapter"><li><a href="a">Foreword</a></li><li><a href="b"><strong>1.</strong> Start</a><ol class="section"><li><a href="c"><strong>1.1.</strong> Install</a></li></ol></li></ol><ol><li>2. Self-numbered</li><li>plain</li></ol>', { width = 60 })
+check(toc.lines[1] == "Foreword[1]" and toc.lines[2] == "1. Start[2]" and toc.lines[3] == "  1.1. Install[3]"
+  and toc.lines[5] == "2. Self-numbered" and toc.lines[6] == "2. plain", "contents lists aren't numbered twice: " .. vim.inspect(toc.lines))
 
 -- Sources on by default
 local state = require("vimquire.state")
@@ -51,6 +57,8 @@ check(vim.uv.fs_stat(devdocs.dir("svelte") .. "/index.json") ~= nil, "svelte ind
 
 local hits = devdocs.search("$state", { "svelte" }, 1, 5)
 check(#hits > 0 and hits[1].title == "$state", "devdocs finds $state first")
+local near = devdocs.neighbors("svelte", "$state")
+check(near and (near.prev or near.next) and (near.next or near.prev).path ~= "$state", "devdocs previous/next page")
 
 vim.cmd("Search $state")
 check(wait(function()
@@ -142,6 +150,105 @@ config.options.stackexchange_key = nil
 vim.env.STACKEXCHANGE_KEY = saved_env
 config.env_files = env_files
 config.env(true)
+
+-- Following links on a page (fetch faked, so no network)
+local http = require("vimquire.http")
+local page = require("vimquire.page")
+local real_get, real_open = http.get, page.open
+http.get = function(_, _, cb)
+  cb('<p>Go <a href="/one">one</a> or <a href="https://two.example/">two</a>.</p><pre>see https://bare.example/x.</pre>')
+end
+vim.cmd("SearchOpen https://test.example/start")
+http.get = real_get
+local opened
+page.open = function(spec)
+  opened = spec.url
+end
+local pb = vim.api.nvim_get_current_buf()
+local function line_of(pat)
+  for i, l in ipairs(vim.api.nvim_buf_get_lines(pb, 0, -1, false)) do
+    if l:find(pat) then
+      return i, l
+    end
+  end
+end
+vim.cmd("SearchFollow 2")
+check(opened == "https://two.example/", ":SearchFollow 2")
+local lnum, l = line_of("bare%.example")
+vim.api.nvim_win_set_cursor(0, { lnum, (l:find("https")) })
+opened = nil
+vim.cmd("SearchFollow")
+check(opened == "https://bare.example/x", "follows a bare URL under the cursor")
+vim.api.nvim_win_set_cursor(0, { (line_of("one")), 0 })
+opened = nil
+vim.api.nvim_feedkeys(vim.keycode("2<CR>"), "x", false)
+check(opened == "https://two.example/", "{n}<CR> follows [n]")
+local real_select = vim.ui.select
+vim.ui.select = function(items, _, cb)
+  cb(items[1])
+end
+vim.api.nvim_win_set_cursor(0, { 3, 0 }) -- the key help line: no link
+opened = nil
+vim.cmd("SearchFollow")
+check(opened == "https://test.example/one", ":SearchFollow with nothing under the cursor lists links")
+vim.ui.select, page.open = real_select, real_open
+vim.cmd("normal q")
+
+-- :SearchSite (fetch faked, so no network): mdBook index, crawl, %s template
+local custom = require("vimquire.sources.custom")
+local site_pages = {
+  ["https://book.example/"] = '<title>Intro - The Book</title><script>window.path_to_searchindex_js = "searchindex-ab12.js";</script>',
+  ["https://book.example/searchindex-ab12.js"] = [[window.search = Object.assign(window.search, JSON.parse('{"doc_urls":["ch1.html#owning","ch2.html#it\'s"],"index":{"documentStore":{"docs":{"0":{"body":"Each value has an owner.","breadcrumbs":"Basics » Ownership","title":"Ownership"},"1":{"body":"A back\\\\slash","breadcrumbs":"Basics » It\'s","title":"It\'s"}}}}}'));]],
+  ["https://crawl.example/docs/"] = '<title>Docs</title><h1>Start</h1><p><a href="a.html">a</a> <a href="/other/">out</a> <a href="pic.png">pic</a> <a HREF="secret/x.html">s</a></p>',
+  ["https://crawl.example/docs/a.html"] = '<title>Page A</title><h2 id="tuning">Tuning knobs</h2><p>Turn the frobnicator up.</p>',
+  ["https://crawl.example/robots.txt"] = "User-agent: *\nDisallow: /docs/secret/",
+}
+local fetched = {}
+http.get = function(url, _, cb)
+  fetched[url] = true
+  vim.schedule(function()
+    local body = site_pages[url]
+    cb(body, body == nil and "The requested URL returned error: 404" or nil, url)
+  end)
+  return { cancel = function() end }
+end
+local site_ok
+vim.cmd("SearchSite https://book.example/")
+check(wait(function()
+  return not custom.building("book") and state.custom("book") and state.custom("book").kind ~= nil
+end, 5000) and state.custom("book").kind == "mdbook" and state.custom("book").name == "The Book", "mdBook site indexed")
+local book = custom.search("book", "ownership", 1, 5)
+check(book and book[1] and book[1].url == "https://book.example/ch1.html#owning" and book[1].title == "Basics » Ownership", "mdBook search")
+check((custom.search("book", "back\\slash", 1, 5) or {})[1] ~= nil, "mdBook escapes decoded")
+require("vimquire").add_site("crawly", "crawl.example/docs/")
+check(wait(function()
+  return state.custom("crawly") and state.custom("crawly").kind ~= nil
+end, 5000) and state.custom("crawly").pages == 2, "crawled 2 pages")
+check(not fetched["https://crawl.example/docs/pic.png"] and not fetched["https://crawl.example/other/"]
+  and not fetched["https://crawl.example/docs/secret/x.html"], "crawl stays under the URL, skips images and robots.txt rules")
+local hit = (custom.search("crawly", "frobnicator", 1, 5) or {})[1]
+check(hit and hit.url == "https://crawl.example/docs/a.html#tuning" and hit.title == "Page A » Tuning knobs", "crawled section found")
+vim.cmd("SearchSite tmpl https://find.example/?q=%s")
+wait(function()
+  return state.custom("tmpl") ~= nil
+end, 2000)
+check(custom.search_url("tmpl", "a b&c") == "https://find.example/?q=a%20b%26c", "template URL filled in")
+check(#require("vimquire.sources").targets("crawly") == 1, "@crawly picks the site")
+page.open = function(spec)
+  opened = spec.url
+end
+opened = nil
+vim.cmd("Search @crawly")
+check(opened == "https://crawl.example/docs/", ":Search @site with no query opens the site")
+opened = nil
+vim.cmd("Search @tmpl")
+check(opened == "https://find.example/", ":Search @site for a %s site opens its home page")
+page.open = real_open
+vim.cmd("SearchRemove book crawly tmpl")
+check(wait(function()
+  return #state.custom_ids() == 0
+end, 5000) and vim.uv.fs_stat(custom.dir("book")) == nil, "sites removed and files deleted")
+http.get = real_get
 
 -- Help and health
 check(pcall(vim.cmd, "helptags " .. vim.fn.fnameescape(vim.fn.getcwd() .. "/doc")) and pcall(vim.cmd, "help vimquire-key"), ":help vimquire-key")

@@ -1,8 +1,24 @@
 # vimquire
 
-Search Stack Overflow, Wikipedia and DevDocs from inside Neovim.
-Results open in the current window, and pages are rendered as plain text so you
-can read them without switching to a browser.
+Search Stack Overflow, Wikipedia, DevDocs and any docs site you add from
+inside Neovim. Results open in the current window, and pages are rendered as
+plain text so you can read them without switching to a browser.
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `:Search {query}` | Search every source that's turned on |
+| `:Search @{source} {query}` | Search one source, e.g. `:Search @rust push`, `:Search @so lifetimes`, `:Search @book ownership` |
+| `:Search @{source}` | Open the source's start page, e.g. `:Search @book` opens the Rust Book's chapter list |
+| `:SearchSite [name] {url}` | Add any site as a source, e.g. `:SearchSite https://doc.rust-lang.org/book/` ([how it works](#adding-any-site)) |
+| `:SearchAdd {source...}` | Turn sources on, e.g. `:SearchAdd rust python~3.13` (downloads DevDocs indexes) |
+| `:SearchRemove {source...}` | Turn sources off and delete their downloads. Forgets sites added with `:SearchSite` |
+| `:SearchSources` | Browse every source and turn them on and off |
+| `:SearchOpen {url}` | Open any web page as text |
+| `:SearchFollow [n]` | On a page: follow link `[n]`, the link under the cursor, or pick from a list |
+
+`:search` in lowercase works too. Everything is also in `:help vimquire`.
 
 > [!IMPORTANT]
 > **Read before using or sharing:**
@@ -51,7 +67,7 @@ can read them without switching to a browser.
 ```lua
 {
   "AndrewRoddy/vimquire",
-  cmd = { "Search", "SearchOpen", "SearchSources", "SearchAdd", "SearchRemove" },
+  cmd = { "Search", "SearchOpen", "SearchFollow", "SearchSources", "SearchAdd", "SearchRemove", "SearchSite" },
   init = function()
     -- lets you type :search in lowercase before the plugin has loaded
     vim.cmd([[cnoreabbrev <expr> search getcmdtype() ==# ':' && getcmdline() ==# 'search' ? 'Search' : 'search']])
@@ -85,7 +101,8 @@ Calling `setup()` is optional. The plugin works with the defaults.
 2. Search: `:Search rust borrow checker`. Move with `j`/`k`, press `<CR>` to
    read a result, and `q` to go back.
 3. Add documentation for what you use: `:SearchAdd rust python~3.13`, or browse
-   everything with `:SearchSources`.
+   everything with `:SearchSources`. For docs DevDocs doesn't have, add the site
+   itself: `:SearchSite https://doc.rust-lang.org/book/`.
 4. If you search Stack Overflow a lot, or share a network with other people,
    [set your own key](#stack-exchange-key).
 
@@ -93,14 +110,7 @@ Everything is also in `:help vimquire`.
 
 ## Usage
 
-| Command | Description |
-|---|---|
-| `:Search {query}` | Search all enabled sources |
-| `:Search @{source} {query}` | Search one source, e.g. `:Search @rust push` or `:Search @so lifetimes` |
-| `:SearchOpen {url}` | Open a web page as text |
-| `:SearchSources` | Enable and disable sources |
-| `:SearchAdd {source...}` | Enable sources, e.g. `:SearchAdd rust python~3.13` |
-| `:SearchRemove {source...}` | Disable sources and delete their downloaded files |
+See [Commands](#commands) for the full list.
 
 Results buffer:
 
@@ -114,11 +124,23 @@ Results buffer:
 | `s` | Sources |
 | `q` | Go back |
 
-Page buffer (line numbers follow your `number` / `relativenumber` settings):
+Page buffer (line numbers follow your `number` / `relativenumber` settings).
+In docs that have pages in order (DevDocs, mdBook sites like the Rust Book,
+Sphinx sites like the Python docs), the previous and next page are shown at the
+top and bottom of each page:
+
+```
+ References and Borrowing - The Rust Programming Language
+ ← [[ What Is Ownership?   The Slice Type ]] →   - contents
+```
 
 | Key | Action |
 |---|---|
-| `<CR>` | Follow the `[n]` link under the cursor |
+| `<CR>` / `gf` | Follow the `[n]` link (or plain URL) under the cursor |
+| `{n}<CR>` | Follow link `[n]` from anywhere on the page, e.g. `12<CR>` |
+| `gl` | List every link on the page and pick one to follow |
+| `]]` / `[[` (or `→` / `←`) | Next / previous page of a book or docs, e.g. the next chapter of the Rust Book |
+| `-` | The docs' contents (chapter list) |
 | `<Tab>` / `<S-Tab>` | Next / previous link |
 | `o` | Open in browser |
 | `y` | Copy URL |
@@ -131,9 +153,45 @@ Page buffer (line numbers follow your `number` / `relativenumber` settings):
 | Stack Overflow | Stack Exchange API. Shows the question and answers sorted by votes. 300 requests/day per IP, or 10,000 with a free key. |
 | Wikipedia | MediaWiki API. |
 | DevDocs | Downloads a doc's search index and searches it locally. Pages are fetched when opened. |
+| Your sites | Any site added with `:SearchSite`. See below. |
 
 Stack Overflow and Wikipedia are enabled by default. DevDocs has 843 doc sets
 and none are enabled by default.
+
+### Adding any site
+
+```vim
+:SearchSite https://doc.rust-lang.org/book/
+:Search @book ownership
+```
+
+`:SearchSite [name] {url}` adds a site as a source. The name is what you type
+after `@`. Without one, it comes from the URL (`book` above). vimquire works
+out how to search the site, trying these in order:
+
+1. **The site's own search page.** If the URL contains `%s`, that's where your
+   query goes: `:SearchSite docsrs https://docs.rs/releases/search?query=%s`.
+   `:Search @docsrs serde` then opens docs.rs's results page, and a normal
+   `:Search` lists it as one result you can open.
+2. **A ready-made search index.** mdBook sites publish their whole search index
+   as one file, so vimquire downloads it once and searches it locally. That
+   covers most Rust books: the
+   [Book](https://doc.rust-lang.org/book/),
+   [Reference](https://doc.rust-lang.org/reference/),
+   [Rust by Example](https://doc.rust-lang.org/rust-by-example/),
+   [Cargo Book](https://doc.rust-lang.org/cargo/) and
+   [Rustonomicon](https://doc.rust-lang.org/nomicon/).
+3. **Crawling.** Otherwise vimquire fetches the pages under the URL (up to
+   `site_max_pages`, 300 by default), keeps their text and searches it
+   locally. It only follows links inside the URL's folder, obeys the site's
+   `robots.txt`, and skips pages that refuse. If the site turns it away
+   entirely, or needs JavaScript to show anything, the site isn't added.
+
+Results from options 2 and 3 point to the section that matched, and mix into
+the normal results list. Sites you add appear under **Your sites** in
+`:SearchSources`, where `<Space>` turns them on and off without deleting
+anything, `R` downloads them again, `D` deletes them and `a` adds a new one.
+`:SearchAdd {url}` works the same as `:SearchSite {url}`.
 
 ### Managing sources
 
@@ -142,11 +200,15 @@ can be expanded and collapsed, and docs with multiple versions (Python, Node,
 etc.) are grouped under their own heading.
 
 ```
- vimquire sources   4 on · 5.7 MB on disk
+ vimquire sources   5 on · 7.1 MB on disk
  ─────────────────────────────────────────────────────────────────────────
  ▾ Websites
      [x] Stack Overflow            stackoverflow   live, nothing stored
      [x] Wikipedia                 wikipedia       live, nothing stored
+
+ ▾ Your sites                  1 added
+     [x] The Rust Programming Lang book            mdBook, 438 sections, 1.4 MB on disk
+     a add   D delete   R download again
 
  ▾ DevDocs                     843 docs, 2 on: python~3.13, rust
      [ ] Angular                   angular         offline copy 5.1 MB
@@ -160,6 +222,8 @@ etc.) are grouped under their own heading.
 |---|---|
 | `<Space>` / `<CR>` | Enable or disable a source, or expand/collapse a section |
 | `l` / `h` | Expand / collapse |
+| `a` | Add a site by URL (same as `:SearchSite`) |
+| `D` / `R` | Delete a site you added / download it again |
 | `O` | Download or delete a doc's offline copy |
 | `u` | Update docs that have a newer version |
 | `f` / `F` | Filter the list / clear the filter |
@@ -189,6 +253,7 @@ require("vimquire").setup({
   stackexchange_key = nil,      -- see "Stack Exchange key" below
   wikipedia_lang = "en",
   default_enabled = { "stackoverflow", "wikipedia" },
+  site_max_pages = 300,         -- most pages :SearchSite crawls from one site
 })
 ```
 
@@ -221,6 +286,8 @@ whether a key was found.
 - Searches are removed from command history and nothing is written to disk
   except the enabled sources list and DevDocs downloads.
 - DevDocs searches run locally. Only pages you open are fetched.
+- Sites added with `:SearchSite` are searched locally too, except `%s` sites,
+  which receive your query.
 - Your IP is still visible to every site. Use `proxy` if you want to route
   requests through Tor or a VPN.
 

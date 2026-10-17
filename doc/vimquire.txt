@@ -1,4 +1,4 @@
-*vimquire.txt*  Search Stack Overflow, Wikipedia and DevDocs from Neovim
+*vimquire.txt*  Search Stack Overflow, Wikipedia, DevDocs and any site from Neovim
 
 Version 0.1.0
 Copyright (c) 2026 Andrew Roddy. All rights reserved. See |vimquire-license|.
@@ -54,8 +54,17 @@ Run `:checkhealth vimquire` to check both.
                             :Search @so borrow checker lifetimes
                             :Search @rust Vec push
 <
+:Search @{source}       With no query, open the source's start page: the URL
+                        of a site added with |:SearchSite| (the chapter list
+                        for mdBook sites), or a DevDocs doc's index. Stack Overflow and Wikipedia ask for a
+                        query instead.
                                                                  *:SearchOpen*
 :SearchOpen {url}       Open any web page as plain text.
+
+                                                               *:SearchFollow*
+:SearchFollow [n]       On a page, follow link `[n]`. With no [n], follow the
+                        link under the cursor, or if there is none, pick one
+                        from a list of every link on the page.
 
                                                               *:SearchSources*
 :SearchSources          Open the list of sources to turn on and off. See
@@ -64,10 +73,22 @@ Run `:checkhealth vimquire` to check both.
                                                                   *:SearchAdd*
 :SearchAdd {source} ... Turn sources on. DevDocs docs are downloaded.
                         Example: `:SearchAdd rust python~3.13`
+                        A URL is added like |:SearchSite|.
 
+                                                                 *:SearchSite*
+:SearchSite [name] {url}
+                        Add any site as a source, searched with
+                        `:Search @name`. Without [name], one is made from the
+                        URL. See |vimquire-your-sites|.
+                        Examples: >
+                            :SearchSite https://doc.rust-lang.org/book/
+                            :SearchSite docsrs https://docs.rs/releases/search?query=%s
+<
                                                                *:SearchRemove*
 :SearchRemove {source} ...
                         Turn sources off. DevDocs docs are deleted from disk.
+                        Sites added with |:SearchSite| are forgotten and their
+                        files deleted.
 
 ==============================================================================
 4. RESULTS LIST                                             *vimquire-results*
@@ -91,9 +112,23 @@ current one is marked with `❯`.
 Pages show line numbers the same way the rest of your editor does ('number',
 'relativenumber' or both). If you use neither, pages show 'number'.
 
-Links are shown as `[n]` after the link text.
+Links are shown as `[n]` after the link text, and listed again under
+"References" at the end of the page.
 
-  <CR>          Follow the link under the cursor
+Docs with pages in order show the previous and next page at the top and
+bottom, e.g. `← [[ What Is Ownership?   The Slice Type ]] →`. This works for
+DevDocs (in the doc's own order), mdBook sites like the Rust Book, Sphinx
+sites like the Python docs, and any page that marks its neighbours with
+rel="prev" and rel="next". Following a link opens it in the same
+window; `q` comes back.
+
+  <CR> / gf     Follow the `[n]` link under the cursor, or a plain URL in
+                the text (e.g. inside a code block)
+  {n}<CR>       Follow link `[n]` from anywhere on the page, e.g. `12<CR>`
+  gl            List every link on the page and pick one to follow
+  ]] / <Right>  Next page of the docs, e.g. the next chapter of a book
+  [[ / <Left>   Previous page of the docs
+  -             The docs' contents (chapter list)
   <Tab>         Next link
   <S-Tab>       Previous link
   o             Open the page in your browser
@@ -115,18 +150,39 @@ DevDocs         Hundreds of documentation sets. Turning a doc on downloads
                 fetched when you open them, unless you download the offline
                 copy.
 
+Your sites      Sites added with |:SearchSite|. See |vimquire-your-sites|.
+
 Stack Overflow and Wikipedia are on by default. No DevDocs docs are.
 
 In |:SearchSources|:
 
   <Space> / <CR>  Turn a source on or off, or open/close a section
   l / h           Expand / collapse
+  a               Add a site by URL, like |:SearchSite|
+  D               Delete a site you added
+  R               Download a site you added again
   O               Download or delete a doc's offline copy
   u               Update docs that have a newer version
   f / F           Filter the list / clear the filter
   q               Close
 
-Turning a doc off deletes its files. Downloads are stored in `data_dir`.
+Turning a doc off deletes its files. Turning one of your sites off keeps
+them; `D` or |:SearchRemove| deletes them. Downloads are stored in `data_dir`.
+
+                                                         *vimquire-your-sites*
+|:SearchSite| works out how to search a site, trying these in order:
+
+1. If the URL contains `%s`, it is the site's own search page and `%s` is
+   where the query goes. `:Search @name {query}` opens that page; a plain
+   |:Search| lists it as one result.
+2. mdBook sites (the Rust Book, Reference, Cargo Book...) publish their whole
+   search index as one file. It is downloaded once and searched locally.
+3. Anything else is crawled: pages inside the URL's folder are fetched, up to
+   `site_max_pages`, following the site's robots.txt and skipping pages that
+   refuse. Their text is kept and searched locally.
+
+Results from 2 and 3 point to the section that matched. If a site turns
+vimquire away, or needs JavaScript to show anything, it isn't added.
 
 ==============================================================================
 7. CONFIGURATION                                             *vimquire-config*
@@ -147,6 +203,7 @@ Calling setup() is optional. These are the defaults: >lua
       wikipedia_lang = "en",
       default_enabled = { "stackoverflow", "wikipedia" },
       catalog_max_age = 7 * 24 * 3600,
+      site_max_pages = 300,
     })
 <
 data_dir                                            *vimquire-data_dir*
@@ -190,6 +247,9 @@ default_enabled                                     *vimquire-default_enabled*
 catalog_max_age                                     *vimquire-catalog_max_age*
         Seconds before the DevDocs catalog is downloaded again.
 
+site_max_pages                                      *vimquire-site_max_pages*
+        The most pages |:SearchSite| fetches from a site it has to crawl.
+
 ==============================================================================
 8. STACK EXCHANGE KEY                                           *vimquire-key*
 
@@ -218,6 +278,8 @@ The env files are read once, so restart Neovim after changing them.
 - With `private` on, searches are removed from command history. Nothing is
   written to disk except the list of enabled sources and DevDocs downloads.
 - DevDocs searches run locally. Only pages you open are fetched.
+- Sites added with |:SearchSite| are searched locally too, except sites
+  whose URL contains `%s`, which receive your query.
 - Every site you search or open can see your IP address. Use `proxy` to hide
   it.
 

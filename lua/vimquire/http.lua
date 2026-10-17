@@ -12,6 +12,8 @@ M.TOOL_UA = "vimquire/" .. config.version .. " (+https://github.com/AndrewRoddy/
 --- opts.ua: "browser" (default) or "tool"
 --- opts.json: decode the body as JSON
 --- opts.output: download to this file instead of returning the body
+--- opts.effective: also pass the final URL, after redirects, as cb's third argument
+--- opts.max_size: give up on bodies bigger than this many bytes
 --- cb(result, err) runs on the main loop. Returns a handle with :cancel().
 function M.get(url, opts, cb)
   opts = opts or {}
@@ -26,6 +28,12 @@ function M.get(url, opts, cb)
   }
   if o.proxy and o.proxy ~= "" then
     vim.list_extend(cmd, { "--proxy", o.proxy })
+  end
+  if opts.max_size then
+    vim.list_extend(cmd, { "--max-filesize", tostring(opts.max_size) })
+  end
+  if opts.effective and not opts.output then
+    vim.list_extend(cmd, { "-w", "\n%{url_effective}" })
   end
   local part
   if opts.output then
@@ -54,15 +62,18 @@ function M.get(url, opts, cb)
       local ok, err = os.rename(part, opts.output)
       return cb(ok and true or nil, err)
     end
-    local body = res.stdout or ""
+    local body, effective = res.stdout or "", nil
+    if opts.effective then
+      body, effective = body:match("^(.*)\n([^\n]*)$")
+    end
     if opts.json then
       local ok, data = pcall(vim.json.decode, body, { luanil = { object = true, array = true } })
       if not ok then
         return cb(nil, "invalid JSON response")
       end
-      return cb(data)
+      return cb(data, nil, effective)
     end
-    cb(body)
+    cb(body, nil, effective)
   end
 
   local ok, proc = pcall(vim.system, cmd, { text = part == nil }, vim.schedule_wrap(finish))
